@@ -1,0 +1,13 @@
+name := """dhtserver"""
+
+version := "2.4.0"
+
+scalaVersion := "2.11.7"
+
+libraryDependencies ++= Seq(
+  "com.typesafe.akka" %% "akka-actor" % "2.4.0",
+  "com.typesafe.akka" %% "akka-remote" % "2.4.0",
+  "com.roundeights" %% "hasher" % "1.2.0"
+)
+
+resolvers ++= Seq("RoundEights" at "http://maven.spikemark.net/roundeights")
