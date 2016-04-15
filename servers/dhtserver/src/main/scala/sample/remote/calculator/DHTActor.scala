@@ -10,6 +10,7 @@ import scala.collection.mutable
 import scala.language.postfixOps
 import scala.concurrent.duration._
 import scala.concurrent.{Future,Await}
+import utilities._
 
 
 
@@ -28,19 +29,18 @@ class DHTActor extends Actor {
   // if key-value is not in the local storage, put the client and the key (client asks for) to waitList
   private val waitList = new mutable.HashMap[ActorRef,Set[String]]
 
+
+  override def preStart(): Unit = {
+    val firstJoinTask = context.system.scheduler.scheduleOnce(0, self, joinRequest())
+
+  }
+
+
+
+
   def receive = {
 
-    // kv store operations
-    //    case get(key) =>
-    //      sender ! store.get(key)
-    //    case put(key,value) =>
-    //      sender ! store.put(key,value)
-
-    //    case salutation(words:String) =>
-    //      println("I received salutation from a client!")
-    //      println("MD5" + "some string".sha1.hex)
-
-    // for clients
+    // client get *************************************************************
     case clientGet(key:String) =>
       val keyHash = toHash(key)
       if (rangeTeller(predecessor.nameHash,mynode.nameHash,keyHash))
@@ -75,9 +75,42 @@ class DHTActor extends Actor {
     case lookupNodeGetReturn(key:String,value:Any) =>
       send2Clients(lookupNodeGetReturn(key,value))
 
+    // client put ****************************************************************
+    case clientPut(key:String,value:String) =>
+      val keyHash = toHash(key)
+      if (rangeTeller(predecessor.nameHash,mynode.nameHash,keyHash))
+        store.put(key,value)
+      else {
+        val firstStation = closest_preceding_figure(keyHash)
+        firstStation.actorNode ! lookupForwardPut(key,value, keyHash,mynode)
+      }
+
+    case lookupForwardPut(key:String, value:String, keyHash:BigInt, hostNode:node) =>
+      if (rangeTeller(mynode.nameHash,finger(0).nameHash,keyHash))
+        hostNode.actorNode ! lookupPredecessorFoundPut(key,value,keyHash,mynode)
+      else {
+        val nextStation = closest_preceding_figure(keyHash)
+        nextStation.actorNode ! lookupForwardPut(key,value,keyHash,hostNode)
+      }
+
+    case lookupPredecessorFoundPut(key:String,value:String,keyHash:BigInt,predecessorNode:node) =>
+      predecessorNode.actorNode ! lookupGetSuccessorPut(key,value,keyHash)
+
+    case lookupGetSuccessorPut(key:String,value:String,keyHash:BigInt) =>
+      sender ! lookupSuccessorFoundPut(key,value,keyHash,finger(0))
+
+    case lookupSuccessorFoundPut(key:String,value:String,keyHash:BigInt,successorNode:node) =>
+      successorNode.actorNode ! lookupNodePut(key,value)
+
+    case lookupNodePut(key:String,value:String) =>
+      store.put(key,value)
 
 
-  // join
+  // join ************************************************************************
+    case joinInitialize(hostNode:node) =>
+
+
+
     case joinRequest(requestNodeName:String,requestNodeHash:BigInt,requestNode:node) =>
       if (rangeTeller(predecessor.nameHash, nodeHash, requestNodeHash))
         requestNode.actorNode ! joinLookupSuccessorFound(mynode)
@@ -102,10 +135,14 @@ class DHTActor extends Actor {
 
     case joinLookupSuccessorFound(successorNode:node) =>
       finger(0) = successorNode
+      finger(0).actorNode ! joinMoveKeyValuesRequest(mynode)
+
+    case joinMoveKeyValuesRequest(requestNode:node) =>
+      sender ! storePartition(requestNode)
 
 
 
-    // stabilization
+    // stabilization *************************************************************************
     case stabilizeGetPredecessor() =>
       sender ! stabilizePredecessorFound(predecessor)
 
@@ -120,17 +157,34 @@ class DHTActor extends Actor {
 
 
 
-    // fix fingers
-    case
+    // fix fingers ***************************************************************************
+    case fixLookupForward(i:Int,id:BigInt,hostNode:node) =>
+      if (rangeTeller(mynode.nameHash,finger(0).nameHash,id))
+        hostNode.actorNode ! fixLookupPredecessorFound(i,id,mynode)
+      else {
+        val nextStation = closest_preceding_figure(id)
+        nextStation.actorNode ! fixLookupForward(i,id,hostNode)
+      }
+
+    case fixLookupPredecessorFound(i:Int,id:BigInt,predecessorNode:node) =>
+      predecessorNode.actorNode ! fixGetSuccessor(i,id)
+
+    case fixGetSuccessor(i:Int,id:BigInt) =>
+      sender ! fixLookupSuccessorFound(i,id,finger(0))
+
+    case fixLookupSuccessorFound(i:Int,id:BigInt,successorNode:node) =>
+      finger(i) = successorNode
+
 
   }
+
 
 
   //  def find_successor(id:String): node = {
   //    val nprime = find_predecessor(id)
   //    return nprime.finger(0)
   //  }
-
+  // function definition ********************************************************************
   def closest_preceding_figure(id:BigInt): node = {
     for (i <- 0 to m - 1) {
       if (finger(i).nameHash > nodeHash && finger(i).nameHash < id)
@@ -147,24 +201,9 @@ class DHTActor extends Actor {
 //    return context.actorSelection(oneNode.path).resolveOne()
 //  }
 
-  def rangeTeller(start:BigInt, end:BigInt, point:BigInt): Boolean = {
-    if (start <= end) {
-      if (point >= start && point < end)
-        return true
-      else
-        return false
-    }
-    else {
-      if (point >= start || point < end)
-        return true
-      else
-        return false
-    }
-  }
 
-  def toHash(s:String):BigInt = {
-    return BigInt(s.sha1.bytes)
-  }
+
+
 
   def putWaitList(client:ActorRef, key:String):Unit = {
     if (waitList.contains(client))
@@ -183,6 +222,17 @@ class DHTActor extends Actor {
         keysWaiting -= lookupResult.key
       }
     }
+  }
+
+  def storePartition(requestNode:node):mutable.HashMap[String,Any] = {
+    val storeResult = new mutable.HashMap[String,Any]()
+    for ((key,value) <- store) {
+      if (rangeTeller(predecessor.nameHash, requestNode.nameHash, toHash(key)))
+        storeResult.put(key,value)
+        store.remove(key)
+    }
+    return storeResult
+
   }
 
 }
