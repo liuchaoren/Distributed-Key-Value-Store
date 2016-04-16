@@ -17,6 +17,7 @@ import scala.concurrent.{Future,Await}
 import scala.collection.mutable.{ArrayBuffer, Set}
 import utilities._
 import scala.util.Random
+import util.control.Breaks._
 
 class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Actor {
 
@@ -36,20 +37,20 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       }
 
       val fingerTables = fingerTableCreation(DHTNodeList)
-      for ((onenode, finger) <- fingerTables)
-        onenode.actorNode ! finger
+      for ((onenode, fingerAndPredecessor) <- fingerTables)
+        onenode.actorNode ! startupFinger(fingerAndPredecessor)
 
 
     case starupFingerReceived(receivedNode:node) =>
       counterFingerReceived += 1
       if (counterFingerReceived == numOfNodes) {
-        for (eachNode <- DHTNodeList)
+        for (eachNode <- DHTNodeList) {
           eachNode.actorNode ! stabilizeHBStart()
-        populateNodes(numOfKVs)
+          eachNode.actorNode ! fixFingerHBStart()
+
+        }
+        populateNodes(numOfKVs,DHTNodeList)
       }
-
-
-
 
 
     case clientNodeCreation(nodeName:String) =>
@@ -63,7 +64,25 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       newNodeActorRef ! joinInitialize(hostNode)
 
 
+    case clientRandomNodeKill(n:Int) =>
+      val randomNode = new Random
+      val nodeSList = DHTNodeList.toVector
+      val killIndex = Set[Int]()
 
+      breakable {
+        while (true) {
+          val nextKill = randomNode.nextInt(nodeSList.size)
+          if (! killIndex.contains(nextKill))
+            killIndex += nextKill
+          if (killIndex.size == n)
+            break
+        }
+      }
+
+      for (eachKillNodeIndex <- killIndex) {
+        nodeSList(eachKillNodeIndex).actorNode ! poisonPill()
+
+      }
 
   }
 
@@ -80,24 +99,26 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       val value = randomString(valueLen)
       val hostNode = nodesList.toVector(randomNode.nextInt(nodesList.size))
       hostNode.actorNode ! clientPut(key, value)
-
     }
 
   }
 
-  def fingerTableCreation(nodeList:Set[node]): mutable.HashMap[node, mutable.ArraySeq[node]] = {
+  def fingerTableCreation(nodeList:Set[node]): mutable.HashMap[node, Tuple2[mutable.ArraySeq[node], node]] = {
     val nodeListOrdered = nodeList.toVector.sortBy[BigInt](_.nameHash)
-    val nodeFingerMap = new mutable.HashMap[node, mutable.ArraySeq[node]]
+    val nodeFingerMap = new mutable.HashMap[node, Tuple2[mutable.ArraySeq[node],node]]
     val m = 160
     for (i <- 0 to nodeListOrdered.size - 1) {
       val targetHash = nodeListOrdered(i).nameHash
       val targetFinger = new mutable.ArraySeq[node](m)
       for (fingerindex <- 0 to m-1) {
         val fingerStart = (BigInt(2).pow(fingerindex) + targetHash).mod(BigInt(2).pow(m))
-        val onefinger = successorNode(nodeListOrdered,fingerStart)
-        targetFinger(fingerindex) = onefinger
+        val oneFinger = successorNode(nodeListOrdered,fingerStart)
+        targetFinger(fingerindex) = oneFinger
       }
-      nodeFingerMap.put(nodeListOrdered(i), targetFinger)
+      if (i == 0)
+        nodeFingerMap.put(nodeListOrdered(i), Tuple2(targetFinger, nodeListOrdered(nodeListOrdered.size-1)))
+      else
+        nodeFingerMap.put(nodeListOrdered(i), Tuple2(targetFinger, nodeListOrdered(i-1)))
     }
     return nodeFingerMap
   }

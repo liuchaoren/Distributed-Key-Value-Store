@@ -1,7 +1,7 @@
 package sample.remote.calculator
 
 import akka.actor.{ActorRef,ActorPath}
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.{HashMap,ArraySeq}
 
 /**
   * Created by Chaoren on 4/11/16.
@@ -42,37 +42,29 @@ case class joinMoveKeyValuesRequest(requestNode:node) extends DHTserverAPI
 case class joinMoveKeyValuesResult(storePart:HashMap[String,Any]) extends DHTserverAPI
 
 
+case class stabilizeStart() extends DHTserverAPI
 case class stabilizeGetPredecessor() extends DHTserverAPI
 case class stabilizePredecessorFound(nodeFound:node) extends DHTserverAPI
 case class stabilizeNotify(mynode:node) extends DHTserverAPI
 case class stabilizeHBStart() extends DHTserverAPI
 
 
+case class fixFingerStart() extends DHTserverAPI
 case class fixLookupForward(i:Int, fingerStart:BigInt, hostNode:node) extends DHTserverAPI
 case class fixLookupPredecessorFound(i:Int, fingerStart:BigInt, nodeFound:node) extends DHTserverAPI
 case class fixGetSuccessor(i:Int,fingerStart:BigInt) extends DHTserverAPI
 case class fixLookupSuccessorFound(i:Int,figureStart:BigInt,nodeFound:node) extends DHTserverAPI
-case class fixFingerSchedule() extends DHTserverAPI
+case class fixFingerHBStart() extends DHTserverAPI
+
+case class startupFinger(fingerAndPredecessor:Tuple2[ArraySeq[node],node]) extends DHTserverAPI
+case class poisonPill() extends DHTserverAPI
 
 
 sealed trait DHTobject
 case class node(path:ActorPath,nameHash:BigInt,actorNode:ActorRef) extends DHTobject
 
 
-sealed trait MasterAPI
 
-
-// clients
-case class clientNodeCreation(nodeName:String) extends MasterAPI
-case class clientRandomNodeKill(n:Int) extends MasterAPI
-case class clientAskForNodes() extends MasterAPI
-case class clientNodeListRequest() extends MasterAPI
-case class clientNodeCreationSuccessorInitialized() extends MasterAPI
-
-// test main
-case class startup() extends MasterAPI
-case class starupFingerReceived(receivedNode:node) extends MasterAPI
-case class startupHBReceived(receivedNode:node) extends MasterAPI
 
 
 

@@ -11,13 +11,16 @@ import scala.language.postfixOps
 import scala.concurrent.duration._
 import scala.concurrent.{Future,Await}
 import utilities._
+import akka.actor.Cancellable;
+import java.util.concurrent.TimeUnit
 
+import scala.util.Random
 
 
 class DHTActor extends Actor {
   val m = 160
   private val store = new mutable.HashMap[String, Any]
-  private val finger = new mutable.ArraySeq[node](m)
+  private var finger = new mutable.ArraySeq[node](m)
   private var predecessor: node = null
 
   val nodeName = self.path.name
@@ -25,15 +28,19 @@ class DHTActor extends Actor {
   val mynode = node(self.path,nodeHash,self)
 
   implicit val timeout = Timeout(FiniteDuration(1, TimeUnit.SECONDS))
+  val stabilizeHBInterval = FiniteDuration(10, TimeUnit.SECONDS)
+  val fixFingerHBInterval = FiniteDuration(10, TimeUnit.SECONDS)
+  val randomFingerIndex = new Random
 
   // if key-value is not in the local storage, put the client and the key (client asks for) to waitList
   private val waitList = new mutable.HashMap[ActorRef,Set[String]]
 
+//
+//  override def preStart(): Unit = {
+//    val firstJoinTask = context.system.scheduler.scheduleOnce(0, self, joinRequest())
+//
+//  }
 
-  override def preStart(): Unit = {
-    val firstJoinTask = context.system.scheduler.scheduleOnce(0, self, joinRequest())
-
-  }
 
 
 
@@ -47,7 +54,7 @@ class DHTActor extends Actor {
         sender ! store.get(key)
       else {
         putWaitList(sender, key)
-        val firstStation = closest_preceding_figure(keyHash)
+        val firstStation = closest_preceding_finger(keyHash)
         firstStation.actorNode ! lookupForward(key,keyHash,mynode)
       }
 
@@ -55,7 +62,7 @@ class DHTActor extends Actor {
       if (rangeTeller(mynode.nameHash,finger(0).nameHash,keyHash))
         hostNode.actorNode ! lookupPredecessorFound(key,keyHash,mynode)
       else {
-        val nextStation = closest_preceding_figure(keyHash)
+        val nextStation = closest_preceding_finger(keyHash)
         nextStation.actorNode ! lookupForward(key,keyHash,hostNode)
       }
 
@@ -81,7 +88,7 @@ class DHTActor extends Actor {
       if (rangeTeller(predecessor.nameHash,mynode.nameHash,keyHash))
         store.put(key,value)
       else {
-        val firstStation = closest_preceding_figure(keyHash)
+        val firstStation = closest_preceding_finger(keyHash)
         firstStation.actorNode ! lookupForwardPut(key,value, keyHash,mynode)
       }
 
@@ -89,7 +96,7 @@ class DHTActor extends Actor {
       if (rangeTeller(mynode.nameHash,finger(0).nameHash,keyHash))
         hostNode.actorNode ! lookupPredecessorFoundPut(key,value,keyHash,mynode)
       else {
-        val nextStation = closest_preceding_figure(keyHash)
+        val nextStation = closest_preceding_finger(keyHash)
         nextStation.actorNode ! lookupForwardPut(key,value,keyHash,hostNode)
       }
 
@@ -108,14 +115,14 @@ class DHTActor extends Actor {
 
   // join ************************************************************************
     case joinInitialize(hostNode:node) =>
-
+      hostNode.actorNode ! joinRequest(nodeName, nodeHash, mynode)
 
 
     case joinRequest(requestNodeName:String,requestNodeHash:BigInt,requestNode:node) =>
       if (rangeTeller(predecessor.nameHash, nodeHash, requestNodeHash))
         requestNode.actorNode ! joinLookupSuccessorFound(mynode)
       else {
-        val firstStation = closest_preceding_figure(requestNodeHash)
+        val firstStation = closest_preceding_finger(requestNodeHash)
         firstStation.actorNode ! joinLookupForward(requestNodeName,requestNodeHash,requestNode)
       }
 
@@ -123,7 +130,7 @@ class DHTActor extends Actor {
       if (rangeTeller(mynode.nameHash, finger(0).nameHash, requestNodeHash))
         requestNode.actorNode ! joinLookupPredecessorFound(mynode)
       else {
-        val nextStation = closest_preceding_figure(requestNodeHash)
+        val nextStation = closest_preceding_finger(requestNodeHash)
         nextStation.actorNode ! joinLookupForward(requestNodeName,requestNodeHash,requestNode)
       }
 
@@ -143,6 +150,9 @@ class DHTActor extends Actor {
 
 
     // stabilization *************************************************************************
+    case stabilizeStart() =>
+      finger(0).actorNode ! stabilizeGetPredecessor()
+
     case stabilizeGetPredecessor() =>
       sender ! stabilizePredecessorFound(predecessor)
 
@@ -155,14 +165,30 @@ class DHTActor extends Actor {
       if (predecessor == null || rangeTeller(predecessor.nameHash, nodeHash, notifyNode.nameHash))
         predecessor = notifyNode
 
+    case stabilizeHBStart() =>
+      context.system.scheduler.schedule(0 second, stabilizeHBInterval,self,stabilizeStart)
 
 
     // fix fingers ***************************************************************************
+
+    case fixFingerStart() =>
+      val fingerIndex = randomFingerIndex.nextInt(m)
+      if (fingerIndex!=0) {
+        val fingerStart = BigInt(2).pow(fingerIndex) + nodeHash
+        if (rangeTeller(nodeHash, finger(0).nameHash, fingerStart))
+          finger(fingerIndex) = finger(0)
+        else {
+          val nextStation = closest_preceding_finger(fingerStart)
+          nextStation.actorNode ! fixLookupForward(fingerIndex,fingerStart,mynode)
+        }
+      }
+
+
     case fixLookupForward(i:Int,id:BigInt,hostNode:node) =>
       if (rangeTeller(mynode.nameHash,finger(0).nameHash,id))
         hostNode.actorNode ! fixLookupPredecessorFound(i,id,mynode)
       else {
-        val nextStation = closest_preceding_figure(id)
+        val nextStation = closest_preceding_finger(id)
         nextStation.actorNode ! fixLookupForward(i,id,hostNode)
       }
 
@@ -175,7 +201,20 @@ class DHTActor extends Actor {
     case fixLookupSuccessorFound(i:Int,id:BigInt,successorNode:node) =>
       finger(i) = successorNode
 
+    case fixFingerHBStart()  =>
+      context.system.scheduler.schedule(0 second, fixFingerHBInterval, self, fixFingerStart)
 
+
+   // initialize
+    case startupFinger(inputFingerAndPredecessor:Tuple2[mutable.ArraySeq[node],node]) =>
+      finger=inputFingerAndPredecessor._1
+      predecessor=inputFingerAndPredecessor._2
+      sender ! starupFingerReceived(mynode)
+
+
+   // kill
+    case poisonPill() =>
+      context.stop(self)
   }
 
 
@@ -185,7 +224,7 @@ class DHTActor extends Actor {
   //    return nprime.finger(0)
   //  }
   // function definition ********************************************************************
-  def closest_preceding_figure(id:BigInt): node = {
+  def closest_preceding_finger(id:BigInt): node = {
     for (i <- 0 to m - 1) {
       if (finger(i).nameHash > nodeHash && finger(i).nameHash < id)
         return finger(i)
