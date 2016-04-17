@@ -18,7 +18,6 @@ import scala.util.Random
 
 
 class DHTActor extends Actor {
-  val m = 160
   private val store = new mutable.HashMap[String, Any]
   private var finger = new mutable.ArraySeq[node](m)
   private var predecessor: node = null
@@ -33,7 +32,7 @@ class DHTActor extends Actor {
   val randomFingerIndex = new Random
 
   // if key-value is not in the local storage, put the client and the key (client asks for) to waitList
-  private val waitList = new mutable.HashMap[ActorRef,Set[String]]
+  private val waitList = new mutable.HashMap[ActorRef,mutable.Set[String]]
 
 //
 //  override def preStart(): Unit = {
@@ -50,7 +49,7 @@ class DHTActor extends Actor {
     // client get *************************************************************
     case clientGet(key:String) =>
       val keyHash = toHash(key)
-      if (rangeTeller(predecessor.nameHash,mynode.nameHash,keyHash))
+      if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash))
         sender ! store.get(key)
       else {
         putWaitList(sender, key)
@@ -59,7 +58,7 @@ class DHTActor extends Actor {
       }
 
     case lookupForward(key:String, keyHash:BigInt, hostNode:node) =>
-      if (rangeTeller(mynode.nameHash,finger(0).nameHash,keyHash))
+      if (rangeTellerEqualRight(mynode.nameHash,finger(0).nameHash,keyHash))
         hostNode.actorNode ! lookupPredecessorFound(key,keyHash,mynode)
       else {
         val nextStation = closest_preceding_finger(keyHash)
@@ -85,7 +84,7 @@ class DHTActor extends Actor {
     // client put ****************************************************************
     case clientPut(key:String,value:String) =>
       val keyHash = toHash(key)
-      if (rangeTeller(predecessor.nameHash,mynode.nameHash,keyHash))
+      if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash))
         store.put(key,value)
       else {
         val firstStation = closest_preceding_finger(keyHash)
@@ -93,7 +92,7 @@ class DHTActor extends Actor {
       }
 
     case lookupForwardPut(key:String, value:String, keyHash:BigInt, hostNode:node) =>
-      if (rangeTeller(mynode.nameHash,finger(0).nameHash,keyHash))
+      if (rangeTellerEqualRight(mynode.nameHash,finger(0).nameHash,keyHash))
         hostNode.actorNode ! lookupPredecessorFoundPut(key,value,keyHash,mynode)
       else {
         val nextStation = closest_preceding_finger(keyHash)
@@ -119,7 +118,7 @@ class DHTActor extends Actor {
 
 
     case joinRequest(requestNodeName:String,requestNodeHash:BigInt,requestNode:node) =>
-      if (rangeTeller(predecessor.nameHash, nodeHash, requestNodeHash))
+      if (rangeTellerEqualRight(predecessor.nameHash, nodeHash, requestNodeHash))
         requestNode.actorNode ! joinLookupSuccessorFound(mynode)
       else {
         val firstStation = closest_preceding_finger(requestNodeHash)
@@ -127,7 +126,7 @@ class DHTActor extends Actor {
       }
 
     case joinLookupForward(requestNodeName:String,requestNodeHash:BigInt,requestNode:node) =>
-      if (rangeTeller(mynode.nameHash, finger(0).nameHash, requestNodeHash))
+      if (rangeTellerEqualRight(mynode.nameHash, finger(0).nameHash, requestNodeHash))
         requestNode.actorNode ! joinLookupPredecessorFound(mynode)
       else {
         val nextStation = closest_preceding_finger(requestNodeHash)
@@ -145,24 +144,29 @@ class DHTActor extends Actor {
       finger(0).actorNode ! joinMoveKeyValuesRequest(mynode)
 
     case joinMoveKeyValuesRequest(requestNode:node) =>
-      sender ! storePartition(requestNode)
+      sender ! joinMoveKeyValuesResult(storePartition(requestNode))
 
+    case joinMoveKeyValuesResult(partOfStore:mutable.HashMap[String,Any]) =>
+      for ((k,v) <- partOfStore)
+        store.put(k,v)
 
 
     // stabilization *************************************************************************
     case stabilizeStart() =>
-      finger(0).actorNode ! stabilizeGetPredecessor()
+      if (finger(0) != null)
+        finger(0).actorNode ! stabilizeGetPredecessor()
 
     case stabilizeGetPredecessor() =>
-      sender ! stabilizePredecessorFound(predecessor)
+      if (predecessor != null)
+        sender ! stabilizePredecessorFound(predecessor)
 
     case stabilizePredecessorFound(stabilizePredecessor:node) =>
-      if (rangeTeller(nodeHash, finger(0).nameHash, stabilizePredecessor.nameHash))
+      if (rangeTellerEqualRight(nodeHash, finger(0).nameHash, stabilizePredecessor.nameHash))
         finger(0) = stabilizePredecessor
       finger(0).actorNode ! stabilizeNotify(mynode)
 
     case stabilizeNotify(notifyNode:node) =>
-      if (predecessor == null || rangeTeller(predecessor.nameHash, nodeHash, notifyNode.nameHash))
+      if (predecessor == null || rangeTellerEqualRight(predecessor.nameHash, nodeHash, notifyNode.nameHash))
         predecessor = notifyNode
 
     case stabilizeHBStart() =>
@@ -174,8 +178,8 @@ class DHTActor extends Actor {
     case fixFingerStart() =>
       val fingerIndex = randomFingerIndex.nextInt(m)
       if (fingerIndex!=0) {
-        val fingerStart = BigInt(2).pow(fingerIndex) + nodeHash
-        if (rangeTeller(nodeHash, finger(0).nameHash, fingerStart))
+        val fingerStart = (BigInt(2).pow(fingerIndex) + nodeHash).mod(BigInt(2).pow(m))
+        if (rangeTellerEqualRight(nodeHash, finger(0).nameHash, fingerStart))
           finger(fingerIndex) = finger(0)
         else {
           val nextStation = closest_preceding_finger(fingerStart)
@@ -185,7 +189,7 @@ class DHTActor extends Actor {
 
 
     case fixLookupForward(i:Int,id:BigInt,hostNode:node) =>
-      if (rangeTeller(mynode.nameHash,finger(0).nameHash,id))
+      if (rangeTellerEqualRight(mynode.nameHash,finger(0).nameHash,id))
         hostNode.actorNode ! fixLookupPredecessorFound(i,id,mynode)
       else {
         val nextStation = closest_preceding_finger(id)
@@ -225,8 +229,8 @@ class DHTActor extends Actor {
   //  }
   // function definition ********************************************************************
   def closest_preceding_finger(id:BigInt): node = {
-    for (i <- 0 to m - 1) {
-      if (finger(i).nameHash > nodeHash && finger(i).nameHash < id)
+    for (i <- m-1 to 0 by -1) {
+      if (finger(i) != null && rangeTellerEqualRight(nodeHash,id,finger(i).nameHash))
         return finger(i)
     }
     return mynode
@@ -240,17 +244,15 @@ class DHTActor extends Actor {
 //    return context.actorSelection(oneNode.path).resolveOne()
 //  }
 
-
-
-
-
+  // if key-value is not found locally, put the request into a waiting list
   def putWaitList(client:ActorRef, key:String):Unit = {
-    if (waitList.contains(client))
-      waitList.get(client) += key
-    else
-      waitList.put(client, Set(key))
+    waitList.get(client) match {
+      case Some(waitingKeys) => waitingKeys += key
+      case None => waitList.put(client, mutable.Set(key))
+    }
   }
 
+  // when receiving an return from lookup, iterate the waiting list and send results to the right clients
   def send2Clients(lookupResult:lookupNodeGetReturn):Unit = {
     for ((client,keysWaiting) <- waitList) {
       if (keysWaiting.isEmpty)
@@ -263,10 +265,11 @@ class DHTActor extends Actor {
     }
   }
 
+  // when new node joins, redistribute key-values
   def storePartition(requestNode:node):mutable.HashMap[String,Any] = {
     val storeResult = new mutable.HashMap[String,Any]()
     for ((key,value) <- store) {
-      if (rangeTeller(predecessor.nameHash, requestNode.nameHash, toHash(key)))
+      if (rangeTellerEqualRight(predecessor.nameHash, requestNode.nameHash, toHash(key)))
         storeResult.put(key,value)
         store.remove(key)
     }

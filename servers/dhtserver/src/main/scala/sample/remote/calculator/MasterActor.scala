@@ -1,6 +1,6 @@
 package sample.remote.calculator
 /**
-  * Created by Chaoren on 4/14/16.
+  * MasterActor initializes the DHT server and receive request to start new node or kill existing node
   */
 
 
@@ -21,11 +21,16 @@ import util.control.Breaks._
 
 class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Actor {
 
-  private val DHTNodeList = Set[node]()
+  // keep a set of DHT nodes in DHTNodeList
+  private val DHTNodeList = mutable.Set[node]()
   private var counterFingerReceived = 0
+  val randomStringLen = new Random
+  val randomNode = new Random
+  val rnd = new Random
+  val randomNodeKill = new Random
+
 
   def receive = {
-
 
     case startup() =>
       for (i <- 1 to numOfNodes) {
@@ -37,10 +42,12 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       }
 
       val fingerTables = fingerTableCreation(DHTNodeList)
+      // pass finger tables and predecessors to nodes
       for ((onenode, fingerAndPredecessor) <- fingerTables)
         onenode.actorNode ! startupFinger(fingerAndPredecessor)
 
 
+    // after all nodes get finger tables and predecessors, start heart beats and populate the nodes
     case starupFingerReceived(receivedNode:node) =>
       counterFingerReceived += 1
       if (counterFingerReceived == numOfNodes) {
@@ -52,26 +59,24 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
         populateNodes(numOfKVs,DHTNodeList)
       }
 
-
+    // handle request of creating an node
     case clientNodeCreation(nodeName:String) =>
       val newNodeActorRef = system.actorOf(Props(classOf[DHTActor]),nodeName)
       val nodeNameHash = toHash(nodeName)
       val newNode = node(newNodeActorRef.path,nodeNameHash,newNodeActorRef)
-      val rnd = new Random
       val hostNode = DHTNodeList.toVector(rnd.nextInt(DHTNodeList.size))
 
       DHTNodeList += newNode
       newNodeActorRef ! joinInitialize(hostNode)
 
-
+    // handle request of kill n nodes randomly
     case clientRandomNodeKill(n:Int) =>
-      val randomNode = new Random
       val nodeSList = DHTNodeList.toVector
       val killIndex = Set[Int]()
 
       breakable {
         while (true) {
-          val nextKill = randomNode.nextInt(nodeSList.size)
+          val nextKill = randomNodeKill.nextInt(nodeSList.size)
           if (! killIndex.contains(nextKill))
             killIndex += nextKill
           if (killIndex.size == n)
@@ -86,12 +91,11 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
   }
 
-
+  // generate an random string of random length
   def randomString(length: Int) = scala.util.Random.alphanumeric.take(length).mkString
 
+  // populate nodes with random keys and random values
   def populateNodes(numOfKVs:Int, nodesList:Set[node]): Unit = {
-    val randomStringLen = new Random
-    val randomNode = new Random
     for (i <- 1 to numOfKVs) {
       val keyLen = randomStringLen.nextInt(25) + 8
       val valueLen = randomStringLen.nextInt(25) + 8
@@ -102,11 +106,10 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
     }
 
   }
-
+  // return the finger tables for a set of nodes
   def fingerTableCreation(nodeList:Set[node]): mutable.HashMap[node, Tuple2[mutable.ArraySeq[node], node]] = {
     val nodeListOrdered = nodeList.toVector.sortBy[BigInt](_.nameHash)
     val nodeFingerMap = new mutable.HashMap[node, Tuple2[mutable.ArraySeq[node],node]]
-    val m = 160
     for (i <- 0 to nodeListOrdered.size - 1) {
       val targetHash = nodeListOrdered(i).nameHash
       val targetFinger = new mutable.ArraySeq[node](m)
@@ -125,10 +128,10 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
   def successorNode(nodeListOrdered:Vector[node], fingerStart:BigInt): node = {
     for (i <- 0 to nodeListOrdered.size-2) {
-      if (rangeTeller(nodeListOrdered(i).nameHash, nodeListOrdered(i+1).nameHash, fingerStart))
+      if (rangeTellerEqualRight(nodeListOrdered(i).nameHash, nodeListOrdered(i+1).nameHash, fingerStart))
         return nodeListOrdered(i+1)
     }
-    return nodeListOrdered(nodeListOrdered.size-1)
+    return nodeListOrdered(0)
   }
 
 }

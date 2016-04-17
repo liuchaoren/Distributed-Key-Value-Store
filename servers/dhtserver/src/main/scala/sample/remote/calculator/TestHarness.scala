@@ -16,5 +16,9 @@ object TestHarness {
 
   val master =system.actorOf(Props(classOf[MasterActor], system, initialNumOfNode, initialNumOfKVs), "MasterActor")
 
+  def main(args: Array[String]): Unit = run()
+  def run():Unit = {
+    master ! startup()
+  }
 
 }
