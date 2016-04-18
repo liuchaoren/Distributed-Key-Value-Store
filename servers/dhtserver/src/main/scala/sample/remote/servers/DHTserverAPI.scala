@@ -11,6 +11,7 @@ sealed trait DHTserverAPI
 case class clientGet(key:String) extends DHTserverAPI
 case class clientGetReturn(key:String,value:Any) extends DHTserverAPI
 case class clientPut(key:String,value:String) extends DHTserverAPI
+case class clientActorRefRequest(clientActorRef:ActorRef)
 
 //case class salutation(words:String) extends DHTserverAPI
 //case class shutdown() extends DHTserverAPI

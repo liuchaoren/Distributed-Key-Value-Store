@@ -9,8 +9,8 @@ import sample.remote.servers.node
 
 sealed trait clientAPI
 case class startup() extends clientAPI
-case class lookupNodeGetReturn(key:String, value:Any) extends clientAPI
-case class DHTNodeListReturn(nodeList:Set[node]) extends clientAPI
+case class clientLookupNodeGetReturn(key:String, value:Any) extends clientAPI
+case class DHTNodeRefReturn() extends clientAPI
 
 // for testing
 case class DHTTopology(topology:HashMap[node,HashMap[String,Any]])

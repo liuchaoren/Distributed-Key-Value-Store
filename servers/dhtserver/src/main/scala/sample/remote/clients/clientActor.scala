@@ -3,12 +3,17 @@ package sample.remote.clients
 import akka.actor.Props
 import akka.actor._
 import scala.collection.mutable._
-import sample.remote.servers.{clientRequestTopology, clientNodeListRequest, node}
+import sample.remote.servers.{clientGet, clientRequestTopology, clientNodeListRequest, node}
 import scala.concurrent.duration._
+import sample.remote.servers.utilities.{toHash,m}
+import java.io._
 
 class clientActor(path:String) extends Actor {
 
-  private var DHTNodeList = Set[node]()
+//  private var DHTNodeList = Set[node]()
+  private var lookupNodeSet = Set[ActorRef]()
+  val lookupNodeListSize = 5
+//  private var masterActorRef:ActorRef = null
 
   sendIdentifyRequest()
 
@@ -33,15 +38,29 @@ class clientActor(path:String) extends Actor {
   def active(actor: ActorRef): Actor.Receive = {
     case startup() =>
       println("send a node list request to remote master")
-      actor ! clientRequestTopology()
+//      actor ! clientRequestTopology()
       actor ! clientNodeListRequest()
+      import context.dispatcher
+      context.system.scheduler.scheduleOnce(3 seconds) {
+        if (lookupNodeSet.size != 0)
+          println("I am trying to get a kv pair")
+          lookupNodeSet.toVector(0) ! clientGet("qwNQg9ouZdgNHcmj")
+      }
 
-    case DHTNodeListReturn(nodeList:Set[node]) =>
-      DHTNodeList = nodeList
-      println("I get a node list")
 
-    case lookupNodeGetReturn(key:String,value:Any) =>
-      println("The key-value pair is " + key + " - " + value)
+    case DHTNodeRefReturn() =>
+      println("I am getting a node ActorRef")
+      lookupNodeSet += sender
+
+//      println("I get a node list")
+//      val hostNode = DHTNodeList.toVector(0)
+//      hostNode.actorNode ! clientGet("HMiWh8u8td")
+
+    case clientLookupNodeGetReturn(key:String,value:Any) =>
+      value match {
+        case Some(realvalue) => println("The key-value pair is " + key + " - " + realvalue)
+        case None => println("The value for " + key +" cannot be found")
+      }
 
 //    case Terminated(`actor`) =>
 //      println("Calculator terminated")
@@ -53,6 +72,7 @@ class clientActor(path:String) extends Actor {
     // request the topology of the DHT servers
     case DHTTopology(topology:HashMap[node,HashMap[String,Any]]) =>
       println("I received the topology of the DHTservers")
+      prepareForTopologyFigure(topology)
       for ((eachNode, localStore) <- topology) {
         println(eachNode.path)
         for ((k,v) <- localStore) {
@@ -61,6 +81,23 @@ class clientActor(path:String) extends Actor {
       }
 
   }
+
+  def prepareForTopologyFigure(topology:HashMap[node,HashMap[String,Any]]): Unit = {
+//    val sortedNodeHash = topology.keySet.toVector.sortBy[BigInt](_.nameHash)
+//    val smallestNodeHash = sortedNodeHash(0).nameHash
+    val output = new PrintWriter(new File("data/topology"))
+    for ((eachNode, localStore)  <- topology) {
+      for ((k, v) <- localStore) {
+        val keyHash = toHash(k)
+        if (keyHash > eachNode.nameHash)
+          output.write(eachNode.nameHash.toString() + "\t" + (keyHash - BigInt(2).pow(m)).toString() + "\n")
+        else
+          output.write(eachNode.nameHash.toString() + "\t" + keyHash.toString() + "\n")
+      }
+    }
+    output.close()
+  }
+
 
 
 }

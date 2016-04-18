@@ -11,7 +11,7 @@ import akka.util.Timeout
 import akka.pattern.ask
 
 import com.roundeights.hasher.Implicits._
-import sample.remote.clients.{DHTNodeListReturn,DHTTopology}
+import sample.remote.clients.{DHTTopology}
 import scala.collection.mutable.{HashMap,Set,ArraySeq}
 import scala.language.postfixOps
 import scala.concurrent.duration._
@@ -120,12 +120,12 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       }
 
 
-    // client requests a list of nodes
+    // client requests a list of nodes to host its future lookup
     case clientNodeListRequest() =>
       println("some client requires a list of node")
       val nodeSList = DHTNodeList.toVector
       val returnNodeIndex = Set[Int]()
-      val returnNodes = Set[node]()
+//      val returnNodes = Set[node]()
 
       breakable {
         while (true) {
@@ -137,9 +137,8 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
         }
       }
       for (eachNodeIndex <- returnNodeIndex)
-        returnNodes += nodeSList(eachNodeIndex)
-
-      sender ! DHTNodeListReturn(returnNodes)
+//        returnNodes += nodeSList(eachNodeIndex)
+        nodeSList(eachNodeIndex).actorNode ! clientActorRefRequest(sender)
 
 
     case clientRequestTopology() =>

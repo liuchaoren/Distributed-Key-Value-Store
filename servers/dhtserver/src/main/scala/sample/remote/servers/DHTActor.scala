@@ -6,6 +6,7 @@ import akka.actor._
 import akka.util.Timeout
 
 import com.roundeights.hasher.Implicits._
+import sample.remote.clients.{clientLookupNodeGetReturn, DHTNodeRefReturn}
 import scala.collection.mutable.{ArraySeq,Set,HashMap}
 import scala.language.postfixOps
 import scala.concurrent.duration._
@@ -44,8 +45,13 @@ class DHTActor extends Actor {
 
   def receive = {
 
+    // client ask for my actorRef for future communication
+    case clientActorRefRequest(clientActorRef:ActorRef) =>
+      clientActorRef ! DHTNodeRefReturn()
+
     // client get *************************************************************
     case clientGet(key:String) =>
+      println("some client is trying to get" + key)
       val keyHash = toHash(key)
       if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash))
         sender ! store.get(key)
@@ -271,12 +277,13 @@ class DHTActor extends Actor {
 
   // when receiving an return from lookup, iterate the waiting list and send results to the right clients
   def send2Clients(lookupResult:lookupNodeGetReturn):Unit = {
+    println("I am trying to send the result to clients")
     for ((client,keysWaiting) <- waitList) {
       if (keysWaiting.isEmpty)
         waitList.remove(client)
 
       if (keysWaiting.contains(lookupResult.key)) {
-        client ! lookupResult
+        client ! clientLookupNodeGetReturn(lookupResult.key,lookupResult.value)
         keysWaiting -= lookupResult.key
       }
     }
