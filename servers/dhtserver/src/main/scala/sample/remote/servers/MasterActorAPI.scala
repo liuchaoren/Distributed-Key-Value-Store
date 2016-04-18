@@ -1,4 +1,4 @@
-package sample.remote.calculator
+package sample.remote.servers
 
 /**
   * Created by Chaoren on 4/15/16.
@@ -18,3 +18,6 @@ case class startup() extends MasterAPI
 case class startupFingerReceived(receivedNode:node) extends MasterAPI
 case class startupPredecessorReceived(receivedNode:node) extends MasterAPI
 case class startupHBReceived(receivedNode:node) extends MasterAPI
+
+
+

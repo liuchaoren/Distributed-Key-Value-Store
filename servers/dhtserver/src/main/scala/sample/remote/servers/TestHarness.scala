@@ -1,4 +1,4 @@
-package sample.remote.calculator
+package sample.remote.servers
 
 import akka.actor._
 import com.typesafe.config.ConfigFactory

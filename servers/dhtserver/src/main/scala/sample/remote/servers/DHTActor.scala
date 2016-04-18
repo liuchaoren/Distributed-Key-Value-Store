@@ -1,4 +1,4 @@
-package sample.remote.calculator
+package sample.remote.servers
 
 import java.util.concurrent.TimeUnit
 

@@ -1,8 +1,9 @@
-package sample.remote.calculator
+package sample.remote.clients
 
 import akka.actor.Props
 import akka.actor._
 import scala.collection.mutable._
+import sample.remote.servers.clientAskForNodes
 
 class clientActor extends Actor {
 

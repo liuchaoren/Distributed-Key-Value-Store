@@ -1,4 +1,4 @@
-package sample.remote.calculator
+package sample.remote.servers
 /**
   * MasterActor initializes the DHT server and receive request to start new node or kill existing node
   */
@@ -111,6 +111,8 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
         nodeSList(eachKillNodeIndex).actorNode ! poisonPill()
 
       }
+
+
 
   }
 

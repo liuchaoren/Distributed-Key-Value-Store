@@ -1,4 +1,4 @@
-package sample.remote.calculator
+package sample.remote.clients
 
 import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
@@ -12,9 +12,10 @@ object Clientinitiator {
   }
 
   def startClientSystem(): Unit = {
-    val system = ActorSystem("ClientSystem", ConfigFactory.load("remotelookup"))
+    val system = ActorSystem("ClientSystem", ConfigFactory.load("clients"))
 
     val oneClient = system.actorOf(Props(classOf[clientActor]), "client1")
     oneClient ! startup()
   }
 }
+
