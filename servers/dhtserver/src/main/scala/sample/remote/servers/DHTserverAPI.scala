@@ -61,6 +61,10 @@ case class startupPredecessor(myPredecessor:node) extends DHTserverAPI
 case class poisonPill() extends DHTserverAPI
 
 
+// for testing
+case class requestLocalKVs() extends DHTserverAPI
+
+
 
 
 

@@ -8,8 +8,10 @@ import java.util.concurrent.TimeUnit
 
 import akka.actor.{ActorRef, Props, Actor, ActorSelection, ActorSystem}
 import akka.util.Timeout
+import akka.pattern.ask
 
 import com.roundeights.hasher.Implicits._
+import sample.remote.clients.{DHTNodeListReturn,DHTTopology}
 import scala.collection.mutable.{HashMap,Set,ArraySeq}
 import scala.language.postfixOps
 import scala.concurrent.duration._
@@ -17,7 +19,7 @@ import scala.concurrent.{Future,Await}
 import utilities._
 import scala.util.Random
 import util.control.Breaks._
-
+import akka.util.Timeout
 
 class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Actor {
 
@@ -26,10 +28,15 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
   private var counterFingerReceived = 0
   private var counterPredecessorReceived = 0
   private var notHBYet = true
+  private val lookupNodeListSize = 5
   val randomStringLen = new Random
   val randomNode = new Random
   val rnd = new Random
   val randomNodeKill = new Random
+
+  implicit val timeout = Timeout(5 seconds)
+
+  val askLocalKVsTimeout = 2 seconds
 
 
   def receive = {
@@ -113,6 +120,37 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       }
 
 
+    // client requests a list of nodes
+    case clientNodeListRequest() =>
+      println("some client requires a list of node")
+      val nodeSList = DHTNodeList.toVector
+      val returnNodeIndex = Set[Int]()
+      val returnNodes = Set[node]()
+
+      breakable {
+        while (true) {
+          val nextNode = randomNode.nextInt(nodeSList.size)
+          if (! returnNodeIndex.contains(nextNode))
+            returnNodeIndex += nextNode
+          if (returnNodeIndex.size==lookupNodeListSize)
+            break
+        }
+      }
+      for (eachNodeIndex <- returnNodeIndex)
+        returnNodes += nodeSList(eachNodeIndex)
+
+      sender ! DHTNodeListReturn(returnNodes)
+
+
+    case clientRequestTopology() =>
+      val topology = new HashMap[node, HashMap[String,Any]]
+      for (eachNode <- DHTNodeList) {
+        val future = ask(eachNode.actorNode, requestLocalKVs()).mapTo[HashMap[String,Any]]
+        val oneLocalKVs = Await.result(future, askLocalKVsTimeout)
+        topology.put(eachNode,oneLocalKVs)
+      }
+
+      sender ! DHTTopology(topology)
 
   }
 

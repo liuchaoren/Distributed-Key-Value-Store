@@ -83,7 +83,7 @@ class DHTActor extends Actor {
     case clientPut(key:String,value:String) =>
       val keyHash = toHash(key)
       if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash)) {
-        println("one kv pair populate me without message forwarding")
+//        println("one kv pair populate me without message forwarding")
 //        println("hash of " + key + "is" + keyHash)
         store.put(key,value)
       }
@@ -112,7 +112,7 @@ class DHTActor extends Actor {
       successorNode.actorNode ! lookupNodePut(key,value)
 
     case lookupNodePut(key:String,value:String) =>
-      println("one kv pair populate me with message forwarding")
+//      println("one kv pair populate me with message forwarding")
       store.put(key,value)
 
 
@@ -157,7 +157,7 @@ class DHTActor extends Actor {
 
     // stabilization *************************************************************************
     case stabilizeStart() =>
-      println("stabilize heart beating")
+//      println("stabilize heart beating")
       if (finger(0) != null)
         finger(0).actorNode ! stabilizeGetPredecessor()
 
@@ -181,7 +181,7 @@ class DHTActor extends Actor {
 
     // fix fingers ***************************************************************************
     case fixFingerStart() =>
-      println("fix finger heart beating")
+//      println("fix finger heart beating")
       val fingerIndex = randomFingerIndex.nextInt(m)
       if (fingerIndex!=0) {
         val fingerStart = (BigInt(2).pow(fingerIndex) + nodeHash).mod(BigInt(2).pow(m))
@@ -228,9 +228,14 @@ class DHTActor extends Actor {
       sender ! startupPredecessorReceived(mynode)
 
 
-   // kill
+    // codes for testing ********************************************************************
+
+    // kill
     case poisonPill() =>
       context.stop(self)
+
+    case requestLocalKVs() =>
+      sender ! store
   }
 
 
