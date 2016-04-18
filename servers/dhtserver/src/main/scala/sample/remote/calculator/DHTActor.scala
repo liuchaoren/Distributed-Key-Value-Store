@@ -2,46 +2,44 @@ package sample.remote.calculator
 
 import java.util.concurrent.TimeUnit
 
-import akka.actor.{ActorRef, Props, Actor, ActorSelection, ActorSystem}
+import akka.actor._
 import akka.util.Timeout
 
 import com.roundeights.hasher.Implicits._
-import scala.collection.mutable
+import scala.collection.mutable.{ArraySeq,Set,HashMap}
 import scala.language.postfixOps
 import scala.concurrent.duration._
 import scala.concurrent.{Future,Await}
 import utilities._
-import akka.actor.Cancellable;
 import java.util.concurrent.TimeUnit
 
 import scala.util.Random
-
+case class node(path:ActorPath,nameHash:BigInt,actorNode:ActorRef)
 
 class DHTActor extends Actor {
-  private val store = new mutable.HashMap[String, Any]
-  private var finger = new mutable.ArraySeq[node](m)
-  private var predecessor: node = null
+  private val store = new HashMap[String, Any]
+  private var finger = new ArraySeq[node](m)
+  private var predecessor:node = null
 
   val nodeName = self.path.name
   val nodeHash = toHash(nodeName)
   val mynode = node(self.path,nodeHash,self)
 
-  implicit val timeout = Timeout(FiniteDuration(1, TimeUnit.SECONDS))
+  implicit val timeout = Timeout(FiniteDuration(5, TimeUnit.SECONDS))
   val stabilizeHBInterval = FiniteDuration(10, TimeUnit.SECONDS)
   val fixFingerHBInterval = FiniteDuration(10, TimeUnit.SECONDS)
   val randomFingerIndex = new Random
 
   // if key-value is not in the local storage, put the client and the key (client asks for) to waitList
-  private val waitList = new mutable.HashMap[ActorRef,mutable.Set[String]]
+  private val waitList = new HashMap[ActorRef,Set[String]]
+
+  import context.dispatcher
 
 //
 //  override def preStart(): Unit = {
 //    val firstJoinTask = context.system.scheduler.scheduleOnce(0, self, joinRequest())
 //
 //  }
-
-
-
 
 
   def receive = {
@@ -84,11 +82,15 @@ class DHTActor extends Actor {
     // client put ****************************************************************
     case clientPut(key:String,value:String) =>
       val keyHash = toHash(key)
-      if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash))
+      if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash)) {
+        println("one kv pair populate me without message forwarding")
+//        println("hash of " + key + "is" + keyHash)
         store.put(key,value)
+      }
       else {
         val firstStation = closest_preceding_finger(keyHash)
         firstStation.actorNode ! lookupForwardPut(key,value, keyHash,mynode)
+//        println("I am forwarding a message")
       }
 
     case lookupForwardPut(key:String, value:String, keyHash:BigInt, hostNode:node) =>
@@ -97,6 +99,7 @@ class DHTActor extends Actor {
       else {
         val nextStation = closest_preceding_finger(keyHash)
         nextStation.actorNode ! lookupForwardPut(key,value,keyHash,hostNode)
+//        println("I am forwarding a messag")
       }
 
     case lookupPredecessorFoundPut(key:String,value:String,keyHash:BigInt,predecessorNode:node) =>
@@ -109,6 +112,7 @@ class DHTActor extends Actor {
       successorNode.actorNode ! lookupNodePut(key,value)
 
     case lookupNodePut(key:String,value:String) =>
+      println("one kv pair populate me with message forwarding")
       store.put(key,value)
 
 
@@ -146,13 +150,14 @@ class DHTActor extends Actor {
     case joinMoveKeyValuesRequest(requestNode:node) =>
       sender ! joinMoveKeyValuesResult(storePartition(requestNode))
 
-    case joinMoveKeyValuesResult(partOfStore:mutable.HashMap[String,Any]) =>
+    case joinMoveKeyValuesResult(partOfStore:HashMap[String,Any]) =>
       for ((k,v) <- partOfStore)
         store.put(k,v)
 
 
     // stabilization *************************************************************************
     case stabilizeStart() =>
+      println("stabilize heart beating")
       if (finger(0) != null)
         finger(0).actorNode ! stabilizeGetPredecessor()
 
@@ -170,12 +175,13 @@ class DHTActor extends Actor {
         predecessor = notifyNode
 
     case stabilizeHBStart() =>
-      context.system.scheduler.schedule(0 second, stabilizeHBInterval,self,stabilizeStart)
+      println("stabilize heart beat starts")
+      context.system.scheduler.schedule(0 second, stabilizeHBInterval,self,stabilizeStart())
 
 
     // fix fingers ***************************************************************************
-
     case fixFingerStart() =>
+      println("fix finger heart beating")
       val fingerIndex = randomFingerIndex.nextInt(m)
       if (fingerIndex!=0) {
         val fingerStart = (BigInt(2).pow(fingerIndex) + nodeHash).mod(BigInt(2).pow(m))
@@ -206,14 +212,20 @@ class DHTActor extends Actor {
       finger(i) = successorNode
 
     case fixFingerHBStart()  =>
-      context.system.scheduler.schedule(0 second, fixFingerHBInterval, self, fixFingerStart)
+      println("fix finger table heart beats starts")
+      context.system.scheduler.schedule(0 second, fixFingerHBInterval, self, fixFingerStart())
 
 
    // initialize
-    case startupFinger(inputFingerAndPredecessor:Tuple2[mutable.ArraySeq[node],node]) =>
-      finger=inputFingerAndPredecessor._1
-      predecessor=inputFingerAndPredecessor._2
-      sender ! starupFingerReceived(mynode)
+    case startupFinger(inputFinger:ArraySeq[node]) =>
+      println("received initial finger table")
+      finger=inputFinger
+      sender ! startupFingerReceived(mynode)
+
+    case startupPredecessor(inputPredecessor:node) =>
+      println("received initial predecessor")
+      predecessor = inputPredecessor
+      sender ! startupPredecessorReceived(mynode)
 
 
    // kill
@@ -248,7 +260,7 @@ class DHTActor extends Actor {
   def putWaitList(client:ActorRef, key:String):Unit = {
     waitList.get(client) match {
       case Some(waitingKeys) => waitingKeys += key
-      case None => waitList.put(client, mutable.Set(key))
+      case None => waitList.put(client,Set(key))
     }
   }
 
@@ -266,8 +278,8 @@ class DHTActor extends Actor {
   }
 
   // when new node joins, redistribute key-values
-  def storePartition(requestNode:node):mutable.HashMap[String,Any] = {
-    val storeResult = new mutable.HashMap[String,Any]()
+  def storePartition(requestNode:node):HashMap[String,Any] = {
+    val storeResult = new HashMap[String,Any]()
     for ((key,value) <- store) {
       if (rangeTellerEqualRight(predecessor.nameHash, requestNode.nameHash, toHash(key)))
         storeResult.put(key,value)

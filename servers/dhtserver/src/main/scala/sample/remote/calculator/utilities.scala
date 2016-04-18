@@ -9,7 +9,7 @@ object utilities {
   val m = 160
 
   def toHash(s:String):BigInt = {
-    return BigInt(s.sha1.bytes)
+    return BigInt(s.sha1.bytes).mod(BigInt(2).pow(m))
   }
 
 

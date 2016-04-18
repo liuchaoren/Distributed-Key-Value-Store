@@ -56,12 +56,11 @@ case class fixGetSuccessor(i:Int,fingerStart:BigInt) extends DHTserverAPI
 case class fixLookupSuccessorFound(i:Int,figureStart:BigInt,nodeFound:node) extends DHTserverAPI
 case class fixFingerHBStart() extends DHTserverAPI
 
-case class startupFinger(fingerAndPredecessor:Tuple2[ArraySeq[node],node]) extends DHTserverAPI
+case class startupFinger(finger:ArraySeq[node]) extends DHTserverAPI
+case class startupPredecessor(myPredecessor:node) extends DHTserverAPI
 case class poisonPill() extends DHTserverAPI
 
 
-sealed trait DHTobject
-case class node(path:ActorPath,nameHash:BigInt,actorNode:ActorRef) extends DHTobject
 
 
 

@@ -9,8 +9,8 @@ import akka.util.Timeout
   * Created by Chaoren on 4/14/16.
   */
 object TestHarness {
-  val initialNumOfNode = 100
-  val initialNumOfKVs = 10000
+  val initialNumOfNode = 10
+  val initialNumOfKVs = 100
   val system = ActorSystem("DHTservers", ConfigFactory.load("DHTservers"))
   implicit val timeout = Timeout(60 seconds)
 

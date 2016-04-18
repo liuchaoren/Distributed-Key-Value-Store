@@ -10,20 +10,22 @@ import akka.actor.{ActorRef, Props, Actor, ActorSelection, ActorSystem}
 import akka.util.Timeout
 
 import com.roundeights.hasher.Implicits._
-import scala.collection.mutable
+import scala.collection.mutable.{HashMap,Set,ArraySeq}
 import scala.language.postfixOps
 import scala.concurrent.duration._
 import scala.concurrent.{Future,Await}
-import scala.collection.mutable.{ArrayBuffer, Set}
 import utilities._
 import scala.util.Random
 import util.control.Breaks._
 
+
 class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Actor {
 
   // keep a set of DHT nodes in DHTNodeList
-  private val DHTNodeList = mutable.Set[node]()
+  private val DHTNodeList = Set[node]()
   private var counterFingerReceived = 0
+  private var counterPredecessorReceived = 0
+  private var notHBYet = true
   val randomStringLen = new Random
   val randomNode = new Random
   val rnd = new Random
@@ -33,6 +35,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
   def receive = {
 
     case startup() =>
+      println("starting up the DHT server!")
       for (i <- 1 to numOfNodes) {
         val nodeName = "DHTnode" + i
         val nodeNameHash = toHash(nodeName)
@@ -40,22 +43,42 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
         val thisNode = node(nodeActorRef.path,nodeNameHash,nodeActorRef)
         DHTNodeList += thisNode
       }
+      println("finished in creating server actors")
 
       val fingerTables = fingerTableCreation(DHTNodeList)
+      val predecessorsList = predecessorCreation(DHTNodeList)
       // pass finger tables and predecessors to nodes
-      for ((onenode, fingerAndPredecessor) <- fingerTables)
-        onenode.actorNode ! startupFinger(fingerAndPredecessor)
+      for ((onenode, finger) <- fingerTables)
+        onenode.actorNode ! startupFinger(finger)
+      for ((onenode, onePredecessor)<-predecessorsList)
+        onenode.actorNode ! startupPredecessor(onePredecessor)
 
 
     // after all nodes get finger tables and predecessors, start heart beats and populate the nodes
-    case starupFingerReceived(receivedNode:node) =>
+    case startupFingerReceived(receivedNode:node) =>
       counterFingerReceived += 1
-      if (counterFingerReceived == numOfNodes) {
+      println(counterFingerReceived + " received ack for one finger table passing")
+      if (counterFingerReceived == numOfNodes && counterPredecessorReceived == numOfNodes && notHBYet) {
         for (eachNode <- DHTNodeList) {
           eachNode.actorNode ! stabilizeHBStart()
           eachNode.actorNode ! fixFingerHBStart()
-
         }
+        notHBYet = false
+        println("start to populate servers")
+        populateNodes(numOfKVs,DHTNodeList)
+      }
+
+    case startupPredecessorReceived(receivedNode:node) =>
+      counterPredecessorReceived += 1
+      println(counterPredecessorReceived + " received ack for one predecessor passing")
+      if (counterFingerReceived == numOfNodes && counterPredecessorReceived == numOfNodes && notHBYet) {
+//        println("start the heart beats")
+        for (eachNode <- DHTNodeList) {
+          eachNode.actorNode ! stabilizeHBStart()
+          eachNode.actorNode ! fixFingerHBStart()
+        }
+        notHBYet = false
+        println("start to populate servers")
         populateNodes(numOfKVs,DHTNodeList)
       }
 
@@ -107,24 +130,33 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
   }
   // return the finger tables for a set of nodes
-  def fingerTableCreation(nodeList:Set[node]): mutable.HashMap[node, Tuple2[mutable.ArraySeq[node], node]] = {
+  def fingerTableCreation(nodeList:Set[node]):HashMap[node, ArraySeq[node]] = {
     val nodeListOrdered = nodeList.toVector.sortBy[BigInt](_.nameHash)
-    val nodeFingerMap = new mutable.HashMap[node, Tuple2[mutable.ArraySeq[node],node]]
+    val nodeFingerMap = new HashMap[node, ArraySeq[node]]
     for (i <- 0 to nodeListOrdered.size - 1) {
       val targetHash = nodeListOrdered(i).nameHash
-      val targetFinger = new mutable.ArraySeq[node](m)
+      val targetFinger = new ArraySeq[node](m)
       for (fingerindex <- 0 to m-1) {
         val fingerStart = (BigInt(2).pow(fingerindex) + targetHash).mod(BigInt(2).pow(m))
         val oneFinger = successorNode(nodeListOrdered,fingerStart)
         targetFinger(fingerindex) = oneFinger
       }
-      if (i == 0)
-        nodeFingerMap.put(nodeListOrdered(i), Tuple2(targetFinger, nodeListOrdered(nodeListOrdered.size-1)))
-      else
-        nodeFingerMap.put(nodeListOrdered(i), Tuple2(targetFinger, nodeListOrdered(i-1)))
+      nodeFingerMap.put(nodeListOrdered(i), targetFinger)
     }
     return nodeFingerMap
   }
+
+  // return the predecessors for a set of nodes
+  def predecessorCreation(nodeList:Set[node]):HashMap[node,node] = {
+    val nodeListOrdered = nodeList.toVector.sortBy[BigInt](_.nameHash)
+    val nodePredecessorMap = new HashMap[node,node]
+    for (i <- 1 to nodeListOrdered.size - 1) {
+      nodePredecessorMap.put(nodeListOrdered(i), nodeListOrdered(i-1))
+    }
+    nodePredecessorMap.put(nodeListOrdered(0),nodeListOrdered(nodeListOrdered.size-1))
+    return nodePredecessorMap
+  }
+
 
   def successorNode(nodeListOrdered:Vector[node], fingerStart:BigInt): node = {
     for (i <- 0 to nodeListOrdered.size-2) {
