@@ -124,6 +124,7 @@ class DHTActor extends Actor {
 
   // join ************************************************************************
     case joinInitialize(hostNode:node) =>
+      println(hostNode.path.name + " is initializing myself")
       hostNode.actorNode ! joinRequest(nodeName, nodeHash, mynode)
 
 
@@ -144,12 +145,15 @@ class DHTActor extends Actor {
       }
 
     case joinLookupPredecessorFound(predecessorNode:node) =>
-      predecessor.actorNode ! joinGetSuccessor()
+      println("my node id is " + mynode.path.name)
+      println("my predecessor is" + predecessor)
+      predecessorNode.actorNode ! joinGetSuccessor()
 
     case joinGetSuccessor()  =>
       sender ! joinLookupSuccessorFound(finger(0))
 
     case joinLookupSuccessorFound(successorNode:node) =>
+      println("I am moving KVs to a new join node")
       finger(0) = successorNode
       finger(0).actorNode ! joinMoveKeyValuesRequest(mynode)
 
@@ -157,6 +161,7 @@ class DHTActor extends Actor {
       sender ! joinMoveKeyValuesResult(storePartition(requestNode))
 
     case joinMoveKeyValuesResult(partOfStore:HashMap[String,Any]) =>
+      println("I am receiving KVs from a node")
       for ((k,v) <- partOfStore)
         store.put(k,v)
 
@@ -164,6 +169,8 @@ class DHTActor extends Actor {
     // stabilization *************************************************************************
     case stabilizeStart() =>
 //      println("stabilize heart beating")
+//      println(mynode.path.name + "'s predecessor is " + predecessor)
+//      println(mynode.path.name + "'s finger table is " + finger)
       if (finger(0) != null)
         finger(0).actorNode ! stabilizeGetPredecessor()
 
@@ -188,15 +195,18 @@ class DHTActor extends Actor {
     // fix fingers ***************************************************************************
     case fixFingerStart() =>
 //      println("fix finger heart beating")
-      val fingerIndex = randomFingerIndex.nextInt(m)
-      if (fingerIndex!=0) {
-        val fingerStart = (BigInt(2).pow(fingerIndex) + nodeHash).mod(BigInt(2).pow(m))
-        if (rangeTellerEqualRight(nodeHash, finger(0).nameHash, fingerStart))
-          finger(fingerIndex) = finger(0)
-        else {
-          val nextStation = closest_preceding_finger(fingerStart)
-          nextStation.actorNode ! fixLookupForward(fingerIndex,fingerStart,mynode)
+      if (finger(0) != null) {
+        val fingerIndex = randomFingerIndex.nextInt(m)
+        if (fingerIndex!=0) {
+          val fingerStart = (BigInt(2).pow(fingerIndex) + nodeHash).mod(BigInt(2).pow(m))
+          if (rangeTellerEqualRight(nodeHash, finger(0).nameHash, fingerStart))
+            finger(fingerIndex) = finger(0)
+          else {
+            val nextStation = closest_preceding_finger(fingerStart)
+            nextStation.actorNode ! fixLookupForward(fingerIndex,fingerStart,mynode)
+          }
         }
+
       }
 
 
@@ -231,6 +241,7 @@ class DHTActor extends Actor {
     case startupPredecessor(inputPredecessor:node) =>
       println("received initial predecessor")
       predecessor = inputPredecessor
+      println("my predecessor is " + predecessor)
       sender ! startupPredecessorReceived(mynode)
 
 
@@ -293,9 +304,10 @@ class DHTActor extends Actor {
   def storePartition(requestNode:node):HashMap[String,Any] = {
     val storeResult = new HashMap[String,Any]()
     for ((key,value) <- store) {
-      if (rangeTellerEqualRight(predecessor.nameHash, requestNode.nameHash, toHash(key)))
+      if (rangeTellerEqualRight(predecessor.nameHash, requestNode.nameHash, toHash(key))) {
         storeResult.put(key,value)
         store.remove(key)
+      }
     }
     return storeResult
 

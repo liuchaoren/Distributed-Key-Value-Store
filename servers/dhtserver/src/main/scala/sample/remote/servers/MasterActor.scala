@@ -91,6 +91,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
     // handle request of creating an node
     case clientNodeCreation(nodeName:String) =>
+      println("I am creating a new node")
       val newNodeActorRef = system.actorOf(Props(classOf[DHTActor]),nodeName)
       val nodeNameHash = toHash(nodeName)
       val newNode = node(newNodeActorRef.path,nodeNameHash,newNodeActorRef)
@@ -98,6 +99,8 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
       DHTNodeList += newNode
       newNodeActorRef ! joinInitialize(hostNode)
+      newNodeActorRef ! stabilizeHBStart()
+      newNodeActorRef ! fixFingerHBStart()
 
     // handle request of kill n nodes randomly
     case clientRandomNodeKill(n:Int) =>
@@ -142,6 +145,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
 
     case clientRequestTopology() =>
+      println("number of node is " + DHTNodeList.size)
       val topology = new HashMap[node, HashMap[String,Any]]
       for (eachNode <- DHTNodeList) {
         val future = ask(eachNode.actorNode, requestLocalKVs()).mapTo[HashMap[String,Any]]

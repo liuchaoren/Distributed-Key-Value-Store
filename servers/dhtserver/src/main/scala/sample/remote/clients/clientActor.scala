@@ -3,7 +3,7 @@ package sample.remote.clients
 import akka.actor.Props
 import akka.actor._
 import scala.collection.mutable._
-import sample.remote.servers.{clientGet, clientRequestTopology, clientNodeListRequest, node}
+import sample.remote.servers._
 import scala.concurrent.duration._
 import sample.remote.servers.utilities.{toHash,m}
 import java.io._
@@ -38,14 +38,15 @@ class clientActor(path:String) extends Actor {
   def active(actor: ActorRef): Actor.Receive = {
     case startup() =>
       println("send a node list request to remote master")
-//      actor ! clientRequestTopology()
+      actor ! clientRequestTopology()
       actor ! clientNodeListRequest()
-      import context.dispatcher
-      context.system.scheduler.scheduleOnce(3 seconds) {
-        if (lookupNodeSet.size != 0)
-          println("I am trying to get a kv pair")
-          lookupNodeSet.toVector(0) ! clientGet("qwNQg9ouZdgNHcmj")
-      }
+//      import context.dispatcher
+//      context.system.scheduler.scheduleOnce(3 seconds) {
+//        if (lookupNodeSet.size != 0)
+//          println("I am trying to get a kv pair")
+//          lookupNodeSet.toVector(0) ! clientGet("qwNQg9ouZdgNHcmj")
+//      }
+//      actor ! clientNodeCreation("newNode1")
 
 
     case DHTNodeRefReturn() =>
