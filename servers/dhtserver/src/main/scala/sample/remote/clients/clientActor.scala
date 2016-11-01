@@ -27,7 +27,7 @@ class clientActor(path:String) extends Actor {
 
   def identifying: Actor.Receive = {
     case ActorIdentity(`path`, Some(actor)) =>
-      println("remote connection success")
+      println("connect to DHT master")
       context.watch(actor)
       context.become(active(actor))
     case ActorIdentity(`path`, None) => println(s"Remote actor not available: $path")
@@ -37,20 +37,21 @@ class clientActor(path:String) extends Actor {
 
   def active(actor: ActorRef): Actor.Receive = {
     case startup() =>
-      println("send a node list request to remote master")
-      actor ! clientRequestTopology()
+      println("request a node list from remote master")
       actor ! clientNodeListRequest()
+      actor ! clientRequestTopology()
 //      import context.dispatcher
 //      context.system.scheduler.scheduleOnce(3 seconds) {
 //        if (lookupNodeSet.size != 0)
 //          println("I am trying to get a kv pair")
 //          lookupNodeSet.toVector(0) ! clientGet("qwNQg9ouZdgNHcmj")
 //      }
-//      actor ! clientNodeCreation("newNode1")
+//      actor ! clientNodeCreation("hahahaNode3")
+//      println("creating a new node")
 
 
     case DHTNodeRefReturn() =>
-      println("I am getting a node ActorRef")
+      println("I am getting a node pointer")
       lookupNodeSet += sender
 
 //      println("I get a node list")
@@ -74,26 +75,26 @@ class clientActor(path:String) extends Actor {
     case DHTTopology(topology:HashMap[node,HashMap[String,Any]]) =>
       println("I received the topology of the DHTservers")
       prepareForTopologyFigure(topology)
-      for ((eachNode, localStore) <- topology) {
-        println(eachNode.path)
-        for ((k,v) <- localStore) {
-          println(k + "  :  "  + v)
-        }
-      }
+//      for ((eachNode, localStore) <- topology) {
+//        println(eachNode.path)
+//        for ((k,v) <- localStore) {
+//          println(k + "  :  "  + v)
+//        }
+//      }
 
   }
 
   def prepareForTopologyFigure(topology:HashMap[node,HashMap[String,Any]]): Unit = {
 //    val sortedNodeHash = topology.keySet.toVector.sortBy[BigInt](_.nameHash)
 //    val smallestNodeHash = sortedNodeHash(0).nameHash
-    val output = new PrintWriter(new File("data/topology"))
+    val output = new PrintWriter(new File("data/topology_before"))
     for ((eachNode, localStore)  <- topology) {
       for ((k, v) <- localStore) {
         val keyHash = toHash(k)
         if (keyHash > eachNode.nameHash)
-          output.write(eachNode.nameHash.toString() + "\t" + (keyHash - BigInt(2).pow(m)).toString() + "\n")
+          output.write(eachNode.path.name + "\t" + eachNode.nameHash.toString() + "\t" + (keyHash - BigInt(2).pow(m)).toString() + "\n")
         else
-          output.write(eachNode.nameHash.toString() + "\t" + keyHash.toString() + "\n")
+          output.write(eachNode.path.name + "\t" + eachNode.nameHash.toString() + "\t" + keyHash.toString() + "\n")
       }
     }
     output.close()

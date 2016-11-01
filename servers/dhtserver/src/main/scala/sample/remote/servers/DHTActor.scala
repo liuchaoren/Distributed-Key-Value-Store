@@ -51,7 +51,7 @@ class DHTActor extends Actor {
 
     // client get *************************************************************
     case clientGet(key:String) =>
-      println("some client is trying to get" + key)
+//      println("some client is trying to get" + key)
       val keyHash = toHash(key)
       if (rangeTellerEqualRight(predecessor.nameHash,mynode.nameHash,keyHash))
         sender ! store.get(key)
@@ -124,7 +124,7 @@ class DHTActor extends Actor {
 
   // join ************************************************************************
     case joinInitialize(hostNode:node) =>
-      println(hostNode.path.name + " is initializing myself")
+      println(hostNode.path.name + " is initializing me")
       hostNode.actorNode ! joinRequest(nodeName, nodeHash, mynode)
 
 
@@ -145,8 +145,8 @@ class DHTActor extends Actor {
       }
 
     case joinLookupPredecessorFound(predecessorNode:node) =>
-      println("my node id is " + mynode.path.name)
-      println("my predecessor is" + predecessor)
+//      println("my node id is " + mynode.path.name)
+//      println("my predecessor is" + predecessor)
       predecessorNode.actorNode ! joinGetSuccessor()
 
     case joinGetSuccessor()  =>
@@ -188,7 +188,7 @@ class DHTActor extends Actor {
         predecessor = notifyNode
 
     case stabilizeHBStart() =>
-      println("stabilize heart beat starts")
+//      println("stabilize heart beat starts")
       context.system.scheduler.schedule(0 second, stabilizeHBInterval,self,stabilizeStart())
 
 
@@ -228,20 +228,20 @@ class DHTActor extends Actor {
       finger(i) = successorNode
 
     case fixFingerHBStart()  =>
-      println("fix finger table heart beats starts")
+//      println("fix finger table heart beats starts")
       context.system.scheduler.schedule(0 second, fixFingerHBInterval, self, fixFingerStart())
 
 
    // initialize
     case startupFinger(inputFinger:ArraySeq[node]) =>
-      println("received initial finger table")
+//      println("received initial finger table")
       finger=inputFinger
       sender ! startupFingerReceived(mynode)
 
     case startupPredecessor(inputPredecessor:node) =>
-      println("received initial predecessor")
+//      println("received initial predecessor")
       predecessor = inputPredecessor
-      println("my predecessor is " + predecessor)
+//      println("my predecessor is " + predecessor)
       sender ! startupPredecessorReceived(mynode)
 
 
@@ -288,7 +288,7 @@ class DHTActor extends Actor {
 
   // when receiving an return from lookup, iterate the waiting list and send results to the right clients
   def send2Clients(lookupResult:lookupNodeGetReturn):Unit = {
-    println("I am trying to send the result to clients")
+//    println("I am trying to send the result to clients")
     for ((client,keysWaiting) <- waitList) {
       if (keysWaiting.isEmpty)
         waitList.remove(client)

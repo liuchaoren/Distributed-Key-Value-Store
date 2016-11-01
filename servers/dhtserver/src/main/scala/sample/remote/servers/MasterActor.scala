@@ -64,9 +64,10 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
     // after all nodes get finger tables and predecessors, start heart beats and populate the nodes
     case startupFingerReceived(receivedNode:node) =>
       counterFingerReceived += 1
-      println(counterFingerReceived + " received ack for one finger table passing")
+//      println(counterFingerReceived + " received ack for one finger table passing")
       if (counterFingerReceived == numOfNodes && counterPredecessorReceived == numOfNodes && notHBYet) {
         for (eachNode <- DHTNodeList) {
+          println("start the heart beats")
           eachNode.actorNode ! stabilizeHBStart()
           eachNode.actorNode ! fixFingerHBStart()
         }
@@ -77,9 +78,9 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
     case startupPredecessorReceived(receivedNode:node) =>
       counterPredecessorReceived += 1
-      println(counterPredecessorReceived + " received ack for one predecessor passing")
+//      println(counterPredecessorReceived + " received ack for one predecessor passing")
       if (counterFingerReceived == numOfNodes && counterPredecessorReceived == numOfNodes && notHBYet) {
-//        println("start the heart beats")
+        println("start the heart beats")
         for (eachNode <- DHTNodeList) {
           eachNode.actorNode ! stabilizeHBStart()
           eachNode.actorNode ! fixFingerHBStart()
@@ -91,7 +92,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
     // handle request of creating an node
     case clientNodeCreation(nodeName:String) =>
-      println("I am creating a new node")
+      println("creating a new node")
       val newNodeActorRef = system.actorOf(Props(classOf[DHTActor]),nodeName)
       val nodeNameHash = toHash(nodeName)
       val newNode = node(newNodeActorRef.path,nodeNameHash,newNodeActorRef)
@@ -125,7 +126,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
     // client requests a list of nodes to host its future lookup
     case clientNodeListRequest() =>
-      println("some client requires a list of node")
+      println("new client requires a list of node")
       val nodeSList = DHTNodeList.toVector
       val returnNodeIndex = Set[Int]()
 //      val returnNodes = Set[node]()
@@ -145,7 +146,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
 
 
     case clientRequestTopology() =>
-      println("number of node is " + DHTNodeList.size)
+//      println("number of node is " + DHTNodeList.size)
       val topology = new HashMap[node, HashMap[String,Any]]
       for (eachNode <- DHTNodeList) {
         val future = ask(eachNode.actorNode, requestLocalKVs()).mapTo[HashMap[String,Any]]
@@ -169,6 +170,7 @@ class MasterActor(system:ActorSystem, numOfNodes:Int, numOfKVs:Int) extends Acto
       val value = randomString(valueLen)
       val hostNode = nodesList.toVector(randomNode.nextInt(nodesList.size))
       hostNode.actorNode ! clientPut(key, value)
+      println("put " + key + " : " + value + " to DHT servers")
     }
 
   }
